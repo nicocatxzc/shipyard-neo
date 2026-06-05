@@ -83,10 +83,12 @@ EXPOSE 8115
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 
-# Use uv to run within the synced environment.
+# Run directly from the venv — uv sync already completed during build.
+# Using uv run at runtime would trigger a re-sync that needs network access.
 # --loop asyncio: Force standard asyncio event loop instead of uvloop.
 # uvloop (installed via uvicorn[standard]) has compatibility issues with
 # Node.js child processes (agent-browser): pipe management differs from
 # standard asyncio, causing process.communicate() to hang waiting for EOF,
 # which manifests as command timeouts.
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8115", "--loop", "asyncio"]
+ENV PATH="/app/.venv/bin:$PATH"
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8115", "--loop", "asyncio"]

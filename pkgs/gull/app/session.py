@@ -30,13 +30,45 @@ logger = logging.getLogger(__name__)
 # — Chromium ————————————————————————————————————————————————————————
 
 CDP_PORT = int(os.environ.get("GULL_CDP_PORT", "9222"))
-CHROMIUM_BIN = os.environ.get(
-    "GULL_CHROMIUM_BIN",
-    shutil.which("google-chrome")
-    or shutil.which("chromium")
-    or shutil.which("chromium-browser")
-    or "chromium",
-)
+
+
+def _find_chromium() -> str:
+    """Locate a headless Chromium binary.
+
+    Priority: GULL_CHROMIUM_BIN env → system PATH → Playwright cache.
+    """
+    # 1. Explicit override
+    explicit = os.environ.get("GULL_CHROMIUM_BIN")
+    if explicit:
+        return explicit
+
+    # 2. System PATH
+    for name in ("google-chrome", "chromium", "chromium-browser", "chrome"):
+        path = shutil.which(name)
+        if path:
+            return path
+
+    # 3. Playwright cache — find chrome binary in any platform dir
+    for pw_root in (
+        "/root/.cache/ms-playwright",
+        os.path.expanduser("~/.cache/ms-playwright"),
+    ):
+        if not os.path.isdir(pw_root):
+            continue
+        for entry in sorted(os.listdir(pw_root), reverse=True):
+            if not entry.startswith("chromium"):
+                continue
+            chrome_dir = os.path.join(pw_root, entry)
+            for sub in os.listdir(chrome_dir):
+                if sub.startswith("chrome-"):
+                    binary = os.path.join(chrome_dir, sub, "chrome")
+                    if os.path.isfile(binary):
+                        return binary
+
+    return "chromium"  # fallback (will fail with clear error)
+
+
+CHROMIUM_BIN = _find_chromium()
 CHROMIUM_ARGS = [
     "--headless=new",
     "--no-sandbox",

@@ -32,7 +32,11 @@ from pydantic import BaseModel, Field
 
 GULL_MODE = os.environ.get("GULL_MODE", "single")  # "single" | "shared"
 
-
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)-5s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -342,43 +346,43 @@ async def lifespan(app: FastAPI):
         # ── Shared mode ──────────────────────────────────────────────
         from app.session import start_shared_chromium, stop_shared_chromium
 
-        print(f"[gull] Starting in shared mode (CDP port=9222), version={GULL_VERSION}")
+        logger.info("[gull] Starting in shared mode (CDP port=9222), version=%s", GULL_VERSION)
         try:
             await start_shared_chromium()
             _browser_ready = True
-            print("[gull] Shared Chromium started")
+            logger.info("[gull] Shared Chromium started")
         except Exception as e:
             _browser_ready = False
-            print(f"[gull] Failed to start shared Chromium: {e}")
+            logger.error("[gull] Failed to start shared Chromium: %s", e)
 
         yield
 
-        print("[gull] Shutting down shared mode...")
+        logger.info("[gull] Shutting down shared mode...")
         await stop_shared_chromium()
         _browser_ready = False
-        print("[gull] Shared Chromium stopped.")
+        logger.info("[gull] Shared Chromium stopped.")
         return
 
     # ── Single mode (legacy) ────────────────────────────────────────
     os.makedirs(BROWSER_PROFILE_DIR, exist_ok=True)
-    print(f"[gull] Starting Gull v{GULL_VERSION}, session={SESSION_NAME}")
-    print(f"[gull] Browser profile dir: {BROWSER_PROFILE_DIR}")
+    logger.info("[gull] Starting Gull v%s, session=%s", GULL_VERSION, SESSION_NAME)
+    logger.info("[gull] Browser profile dir: %s", BROWSER_PROFILE_DIR)
 
     try:
-        print("[gull] Pre-warming browser (open about:blank)...")
+        logger.info("[gull] Pre-warming browser (open about:blank)...")
         await _ensure_browser_ready()
         if _browser_ready:
-            print("[gull] Browser pre-warmed successfully")
+            logger.info("[gull] Browser pre-warmed successfully")
         else:
-            print(
+            logger.warning(
                 "[gull] Browser pre-warm did not complete (will fall back to per-command --profile)"
             )
     except Exception as e:
-        print(f"[gull] Failed to pre-warm browser: {e}")
+        logger.warning("[gull] Failed to pre-warm browser: %s", e)
 
     yield
 
-    print("[gull] Shutting down, closing browser...")
+    logger.info("[gull] Shutting down, closing browser...")
     await _run_agent_browser(
         "close",
         session=SESSION_NAME,
