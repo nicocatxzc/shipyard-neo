@@ -11,6 +11,20 @@
 # Those images must be built once before use (see Makefile or 'build' profile).
 
 services:
+  # ── Gull Service (shared browser pool) ─────────────────
+  # Long-running shared Chromium. All sandboxes with browser:shared
+  # route through this instead of creating per-sandbox gull containers.
+  gull-service:
+    image: shipyard-neo/gull:dev
+    container_name: shipyard-dev-gull
+    restart: unless-stopped
+    environment:
+      - GULL_MODE=shared
+      - GULL_CDP_PORT=9222
+      - AGENT_BROWSER_IDLE_TIMEOUT_MS=600000  # 10 min
+    networks:
+      - shipyard-dev
+
   # ── Bay (control plane) ──────────────────────────────
   bay:
     build:

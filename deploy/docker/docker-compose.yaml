@@ -17,6 +17,20 @@
 #   To inject a specific key, set BAY_API_KEY in the environment section.
 
 services:
+  # ── Gull Service (shared browser pool) ─────────────────
+  # Shared Chromium for all browser-python sandboxes.  One Chromium
+  # process serves all sandboxes instead of per-sandbox Gull containers.
+  gull-service:
+    image: ghcr.io/astrbotdevs/shipyard-neo-gull:latest
+    container_name: bay-gull
+    restart: unless-stopped
+    environment:
+      - GULL_MODE=shared
+      - GULL_CDP_PORT=9222
+      - AGENT_BROWSER_IDLE_TIMEOUT_MS=600000  # 10 min session GC
+    networks:
+      - bay-network
+
   bay:
     image: ghcr.io/astrbotdevs/shipyard-neo-bay:latest
     container_name: bay

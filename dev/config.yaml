@@ -32,6 +32,11 @@ security:
   allow_anonymous: true
   api_key: "sk-bay-dev-local"
 
+# Global shared browser service — all browser:shared profiles route here
+browser_service:
+  enabled: true
+  endpoint: "http://gull-service:8115"
+
 profiles:
   # ── Single-container python sandbox ──────────────────
   - id: python-default
@@ -49,9 +54,10 @@ profiles:
     warm_pool_size: 1
     env: {}
 
-  # ── Multi-container browser + python ─────────────────
+  # ── Shared browser + python (uses global Gull Service) ──
   - id: browser-python
-    description: "Browser automation + Python (dev)"
+    description: "Browser automation + Python (shared browser pool)"
+    browser: shared                           # ← routes through gull-service
     containers:
       - name: ship
         image: "shipyard-neo/ship:dev"
@@ -64,19 +70,6 @@ profiles:
           - python
           - shell
           - filesystem
-        primary_for:
-          - python
-          - shell
-          - filesystem
-        env: {}
-      - name: gull
-        image: "shipyard-neo/gull:dev"
-        runtime_type: gull
-        runtime_port: 8115
-        resources:
-          cpus: 1.0
-          memory: "2g"
-        capabilities:
           - browser
         env: {}
     idle_timeout: 600
