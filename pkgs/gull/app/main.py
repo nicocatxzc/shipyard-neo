@@ -5,14 +5,13 @@ A thin HTTP wrapper around agent-browser CLI, providing:
 - GET /health: Health check
 - GET /meta: Runtime metadata and capabilities
 
-Architecture:
-- Uses CLI passthrough mode: agent-browser commands are passed as strings
-- Automatically injects --session and --profile parameters
-- --session: mapped to SANDBOX_ID, isolates browser instances
-- --profile: mapped to /workspace/.browser/profile/, persists browser state
-  (cookies, localStorage, IndexedDB, service workers, cache) across
-  container restarts. Cleaned up when Sandbox is deleted (Cargo Volume).
-- Uses asyncio.create_subprocess_exec for non-blocking execution
+Modes (via GULL_MODE env var):
+- single (default): per-sandbox isolated browser (legacy).  Each Gull
+  container serves exactly one sandbox; --session is fixed to SANDBOX_ID.
+- shared: multi-tenant shared browser pool.  One Gull container serves
+  all sandboxes; Chromium is started once on boot; agent-browser --cdp
+  connects to the shared Chromium; --session is set from the request's
+  sandbox_id for per-sandbox isolation.
 """
 
 from __future__ import annotations
@@ -30,6 +29,9 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
+
+GULL_MODE = os.environ.get("GULL_MODE", "single")  # "single" | "shared"
+
 
 logger = logging.getLogger(__name__)
 
@@ -130,10 +132,17 @@ async def _ensure_browser_ready() -> None:
 
 
 class ExecRequest(BaseModel):
-    """Request to execute an agent-browser command."""
+    """Request to execute an agent-browser command.
+
+    In shared mode, sandbox_id is required for session isolation.
+    In single mode, sandbox_id is ignored (uses global SANDBOX_ID).
+    """
 
     cmd: str = Field(
         ..., description="agent-browser command (without 'agent-browser' prefix)"
+    )
+    sandbox_id: str | None = Field(
+        default=None, description="Sandbox ID for session isolation (shared mode)"
     )
     timeout: int = Field(default=30, description="Timeout in seconds", ge=1, le=300)
 
@@ -324,30 +333,37 @@ def _parse_frontmatter(text: str) -> dict:
 async def lifespan(app: FastAPI):
     """Application lifespan manager.
 
-    On startup:
-    - Ensure browser profile directory exists on Cargo Volume.
-    - Pre-warm Chromium browser by opening about:blank.
-      This triggers Playwright + Chromium initialization so subsequent
-      commands don't incur cold-start latency.
-    - agent-browser --profile automatically restores persisted state
-      (cookies, localStorage, etc.) on first command.
-
-    On shutdown:
-    - Close the browser session. agent-browser --profile automatically
-      persists state to the profile directory.
-
-    Note: Built-in skills injection is handled by entrypoint.sh (shell layer),
-    not in Python lifespan, for security and consistency with Ship.
+    In single mode: pre-warm browser via agent-browser daemon.
+    In shared mode: start shared Chromium, no per-command profile needed.
     """
     global _browser_ready
 
-    # Ensure profile dir exists on shared Cargo Volume
+    if GULL_MODE == "shared":
+        # ── Shared mode ──────────────────────────────────────────────
+        from app.session import start_shared_chromium, stop_shared_chromium
+
+        print(f"[gull] Starting in shared mode (CDP port=9222), version={GULL_VERSION}")
+        try:
+            await start_shared_chromium()
+            _browser_ready = True
+            print("[gull] Shared Chromium started")
+        except Exception as e:
+            _browser_ready = False
+            print(f"[gull] Failed to start shared Chromium: {e}")
+
+        yield
+
+        print("[gull] Shutting down shared mode...")
+        await stop_shared_chromium()
+        _browser_ready = False
+        print("[gull] Shared Chromium stopped.")
+        return
+
+    # ── Single mode (legacy) ────────────────────────────────────────
     os.makedirs(BROWSER_PROFILE_DIR, exist_ok=True)
     print(f"[gull] Starting Gull v{GULL_VERSION}, session={SESSION_NAME}")
     print(f"[gull] Browser profile dir: {BROWSER_PROFILE_DIR}")
 
-    # Pre-warm browser: start agent-browser daemon + Chromium via `open about:blank`.
-    # Failure does NOT block service startup (graceful degradation).
     try:
         print("[gull] Pre-warming browser (open about:blank)...")
         await _ensure_browser_ready()
@@ -358,12 +374,10 @@ async def lifespan(app: FastAPI):
                 "[gull] Browser pre-warm did not complete (will fall back to per-command --profile)"
             )
     except Exception as e:
-        # Pre-warm failure is not fatal; first user command will trigger startup
         print(f"[gull] Failed to pre-warm browser: {e}")
 
     yield
 
-    # Shutdown: close browser (profile auto-persists state)
     print("[gull] Shutting down, closing browser...")
     await _run_agent_browser(
         "close",
@@ -389,17 +403,28 @@ async def exec_command(request: ExecRequest) -> ExecResponse:
     The command is transparently passed to the agent-browser CLI with
     automatic --session injection for browser context isolation.
 
+    In shared mode, uses sandbox_id from request for --session isolation
+    connecting to the shared Chromium via --cdp.
+
     Examples:
         {"cmd": "open https://example.com"}
         {"cmd": "snapshot -i"}
-        {"cmd": "click @e1"}
-        {"cmd": "fill @e2 'hello world'"}
         {"cmd": "screenshot /workspace/page.png"}
     """
-    # Make sure readiness is evaluated even if lifespan pre-warm didn't run yet.
-    await _ensure_browser_ready()
+    sandbox_id = request.sandbox_id
 
-    # If readiness probe/pre-warm succeeded, omit --profile to avoid agent-browser daemon warnings.
+    if GULL_MODE == "shared" and sandbox_id:
+        from app.session import execute_browser
+
+        stdout, stderr, exit_code = await execute_browser(
+            sandbox_id,
+            request.cmd,
+            timeout=request.timeout,
+        )
+        return ExecResponse(stdout=stdout, stderr=stderr, exit_code=exit_code)
+
+    # ── Single mode (legacy) ────────────────────────────────────────
+    await _ensure_browser_ready()
     profile = None if _browser_ready else BROWSER_PROFILE_DIR
     stdout, stderr, exit_code = await _run_agent_browser(
         request.cmd,
@@ -407,73 +432,53 @@ async def exec_command(request: ExecRequest) -> ExecResponse:
         profile=profile,
         timeout=request.timeout,
     )
-
-    return ExecResponse(
-        stdout=stdout,
-        stderr=stderr,
-        exit_code=exit_code,
-    )
+    return ExecResponse(stdout=stdout, stderr=stderr, exit_code=exit_code)
 
 
 @app.post("/exec_batch", response_model=BatchExecResponse)
 async def exec_batch(request: BatchExecRequest) -> BatchExecResponse:
     """Execute a batch of agent-browser commands sequentially.
 
-    Loops over commands calling _run_agent_browser() for each.
-    Tracks per-step timing and respects overall timeout budget.
-    If stop_on_error is True, stops on first non-zero exit code.
-
-    Examples:
-        {
-            "commands": [
-                "open https://example.com",
-                "wait --load networkidle",
-                "snapshot -i"
-            ],
-            "timeout": 60,
-            "stop_on_error": true
-        }
+    In shared mode, sandbox-aware; in single mode, uses legacy session.
     """
-    # Make sure readiness is evaluated even if lifespan pre-warm didn't run yet.
-    await _ensure_browser_ready()
-
+    sandbox_id = getattr(request, "sandbox_id", None)
     batch_start = time.perf_counter()
     results: list[BatchStepResult] = []
 
     for i, cmd in enumerate(request.commands):
-        # Calculate remaining timeout budget
         elapsed = time.perf_counter() - batch_start
         remaining_timeout = request.timeout - elapsed
         if remaining_timeout <= 0:
             break
 
         step_start = time.perf_counter()
-        # If lifespan pre-warm succeeded, omit --profile to avoid agent-browser daemon warnings.
-        profile = None if _browser_ready else BROWSER_PROFILE_DIR
-        stdout, stderr, exit_code = await _run_agent_browser(
-            cmd,
-            session=SESSION_NAME,
-            profile=profile,
-            timeout=remaining_timeout,
-        )
-        step_duration_ms = int((time.perf_counter() - step_start) * 1000)
 
+        if GULL_MODE == "shared" and sandbox_id:
+            from app.session import execute_browser
+
+            stdout, stderr, exit_code = await execute_browser(
+                sandbox_id, cmd, timeout=remaining_timeout
+            )
+        else:
+            profile = None if _browser_ready else BROWSER_PROFILE_DIR
+            stdout, stderr, exit_code = await _run_agent_browser(
+                cmd,
+                session=SESSION_NAME,
+                profile=profile,
+                timeout=remaining_timeout,
+            )
+
+        step_duration_ms = int((time.perf_counter() - step_start) * 1000)
         results.append(
             BatchStepResult(
-                cmd=cmd,
-                stdout=stdout,
-                stderr=stderr,
-                exit_code=exit_code,
-                step_index=i,
-                duration_ms=step_duration_ms,
+                cmd=cmd, stdout=stdout, stderr=stderr,
+                exit_code=exit_code, step_index=i, duration_ms=step_duration_ms,
             )
         )
-
         if request.stop_on_error and exit_code != 0:
             break
 
     total_duration_ms = int((time.perf_counter() - batch_start) * 1000)
-
     return BatchExecResponse(
         results=results,
         total_steps=len(request.commands),
@@ -490,21 +495,25 @@ async def exec_batch(request: BatchExecRequest) -> BatchExecResponse:
 async def health() -> HealthResponse:
     """Health check endpoint.
 
-    Checks if agent-browser is installed, if a browser session is active,
-    and whether the browser has been pre-warmed and is ready to accept commands.
-
-    The `browser_ready` field indicates whether Chromium was successfully
-    pre-warmed during startup. Bay uses this field in _wait_for_ready()
-    to determine when a Gull session is truly operational.
-
-    Status values:
-    - "healthy": agent-browser CLI is available and responsive
-    - "degraded": agent-browser exists but CLI probe failed
-    - "unhealthy": agent-browser binary not found
+    In shared mode: checks Chromium is alive via CDP port.
+    In single mode: checks agent-browser daemon is responsive.
     """
-    # Check if agent-browser is available
-    agent_browser_available = shutil.which("agent-browser") is not None
+    # ── Shared mode ──────────────────────────────────────────────────
+    if GULL_MODE == "shared":
+        from app.session import check_chromium_health
 
+        chromium_ok = await check_chromium_health()
+        agent_ok = shutil.which("agent-browser") is not None
+        return HealthResponse(
+            status="healthy" if (chromium_ok and agent_ok) else "degraded",
+            browser_active=chromium_ok,
+            browser_ready=chromium_ok,
+            session="shared",
+            version=GULL_VERSION,
+        )
+
+    # ── Single mode (legacy) ────────────────────────────────────────
+    agent_browser_available = shutil.which("agent-browser") is not None
     if not agent_browser_available:
         return HealthResponse(
             status="unhealthy",
