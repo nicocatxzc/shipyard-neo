@@ -87,6 +87,7 @@ class K8sDriver(Driver):
         # with a clear message at startup rather than silently misbehaving.
         # Only check real Settings instances (skip MagicMock in tests).
         from app.config import Settings as SettingsType
+
         if isinstance(settings, SettingsType):
             bs = settings.browser_service
             if bs is not None and bs.enabled:

@@ -156,13 +156,9 @@ class SharedGullAdapter(BaseAdapter):
                 exit_code=data.get("exit_code", 1),
             )
         except httpx.TimeoutException:
-            raise RequestTimeoutError(
-                f"Browser command timed out after {t:.0f}s"
-            )
+            raise RequestTimeoutError(f"Browser command timed out after {t:.0f}s")
         except httpx.HTTPStatusError as exc:
-            raise ShipError(
-                f"Gull service returned HTTP {exc.response.status_code}"
-            )
+            raise ShipError(f"Gull service returned HTTP {exc.response.status_code}")
         except Exception as exc:
             raise ShipError(f"Browser execution failed: {exc}")
 
@@ -179,7 +175,9 @@ class SharedGullAdapter(BaseAdapter):
         results: list[ExecutionResult] = []
         for cmd in commands:
             result = await self.exec_browser(
-                cmd, sandbox_id=sandbox_id, cargo_id=cargo_id,
+                cmd,
+                sandbox_id=sandbox_id,
+                cargo_id=cargo_id,
                 timeout=timeout,
             )
             results.append(result)

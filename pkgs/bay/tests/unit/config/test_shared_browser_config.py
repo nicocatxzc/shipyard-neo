@@ -1,6 +1,5 @@
 """Tests for shared browser pool — config parsing (items 1-7)."""
 
-import pytest
 from app.config import (
     BrowserServiceConfig,
     ContainerSpec,
@@ -23,9 +22,7 @@ class TestBrowserServiceConfig:
         assert cfg.endpoint == "http://gull:9000"
 
     def test_from_dict_like_yaml(self):
-        cfg = BrowserServiceConfig(
-            **{"enabled": True, "endpoint": "http://gull-shared:8115"}
-        )
+        cfg = BrowserServiceConfig(**{"enabled": True, "endpoint": "http://gull-shared:8115"})
         assert cfg.enabled is True
 
     def test_settings_default_creates_disabled_instance(self):
@@ -46,8 +43,10 @@ class TestProfileBrowserField:
             browser="shared",
             containers=[
                 ContainerSpec(
-                    name="ship", image="ship:latest",
-                    runtime_type="ship", runtime_port=8123,
+                    name="ship",
+                    image="ship:latest",
+                    runtime_type="ship",
+                    runtime_port=8123,
                     capabilities=["python", "shell", "filesystem", "browser"],
                 ),
             ],
@@ -62,13 +61,17 @@ class TestProfileBrowserField:
             browser="isolated",
             containers=[
                 ContainerSpec(
-                    name="ship", image="ship:latest",
-                    runtime_type="ship", runtime_port=8123,
+                    name="ship",
+                    image="ship:latest",
+                    runtime_type="ship",
+                    runtime_port=8123,
                     capabilities=["python", "shell", "filesystem"],
                 ),
                 ContainerSpec(
-                    name="gull", image="gull:latest",
-                    runtime_type="gull", runtime_port=8115,
+                    name="gull",
+                    image="gull:latest",
+                    runtime_type="gull",
+                    runtime_port=8115,
                     capabilities=["browser"],
                 ),
             ],
@@ -79,11 +82,14 @@ class TestProfileBrowserField:
 
     def test_capabilities_still_report_browser_in_shared_mode(self):
         p = ProfileConfig(
-            id="bs", browser="shared",
+            id="bs",
+            browser="shared",
             containers=[
                 ContainerSpec(
-                    name="ship", image="ship:latest",
-                    runtime_type="ship", runtime_port=8123,
+                    name="ship",
+                    image="ship:latest",
+                    runtime_type="ship",
+                    runtime_port=8123,
                     capabilities=["python", "browser"],
                 ),
             ],
@@ -96,8 +102,10 @@ class TestBackwardCompat:
 
     def test_legacy_profile_no_browser_field(self):
         p = ProfileConfig(
-            id="python-default", image="ship:latest",
-            runtime_type="ship", runtime_port=8123,
+            id="python-default",
+            image="ship:latest",
+            runtime_type="ship",
+            runtime_port=8123,
             capabilities=["python", "shell", "filesystem"],
         )
         assert p.browser is None
@@ -108,13 +116,17 @@ class TestBackwardCompat:
             id="browser-python-legacy",
             containers=[
                 ContainerSpec(
-                    name="ship", image="ship:latest",
-                    runtime_type="ship", runtime_port=8123,
+                    name="ship",
+                    image="ship:latest",
+                    runtime_type="ship",
+                    runtime_port=8123,
                     capabilities=["python", "shell", "filesystem"],
                 ),
                 ContainerSpec(
-                    name="gull", image="gull:latest",
-                    runtime_type="gull", runtime_port=8115,
+                    name="gull",
+                    image="gull:latest",
+                    runtime_type="gull",
+                    runtime_port=8115,
                     capabilities=["browser"],
                 ),
             ],

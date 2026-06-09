@@ -24,7 +24,8 @@ def shared_browser_settings() -> Settings:
         database={"url": "sqlite+aiosqlite:///:memory:"},
         driver={"type": "docker"},
         browser_service=BrowserServiceConfig(
-            enabled=True, endpoint="http://gull:8115",
+            enabled=True,
+            endpoint="http://gull:8115",
         ),
         profiles=[
             ProfileConfig(
@@ -32,8 +33,10 @@ def shared_browser_settings() -> Settings:
                 browser="shared",
                 containers=[
                     ContainerSpec(
-                        name="ship", image="ship:latest",
-                        runtime_type="ship", runtime_port=8123,
+                        name="ship",
+                        image="ship:latest",
+                        runtime_type="ship",
+                        runtime_port=8123,
                         capabilities=["python", "shell", "filesystem", "browser"],
                     ),
                 ],
@@ -75,11 +78,13 @@ class TestSharedBrowserCleanupOnDelete:
     """Sandbox delete with browser:shared triggers Gull session cleanup."""
 
     async def test_delete_calls_destroy_session(
-        self, sandbox_mgr: SandboxManager,
+        self,
+        sandbox_mgr: SandboxManager,
     ):
         """Deleting a shared-browser sandbox calls SharedGullAdapter.destroy_session."""
         sandbox = await sandbox_mgr.create(
-            owner="test", profile_id="browser-shared",
+            owner="test",
+            profile_id="browser-shared",
         )
 
         with patch(
@@ -90,13 +95,16 @@ class TestSharedBrowserCleanupOnDelete:
             mock_destroy.assert_awaited_once_with(sandbox.id)
 
     async def test_delete_succeeds_even_if_destroy_fails(
-        self, sandbox_mgr: SandboxManager, db_session: AsyncSession,
+        self,
+        sandbox_mgr: SandboxManager,
+        db_session: AsyncSession,
     ):
         """If destroy_session raises, delete still completes."""
         from app.models.sandbox import Sandbox as SandboxModel
 
         sandbox = await sandbox_mgr.create(
-            owner="test", profile_id="browser-shared",
+            owner="test",
+            profile_id="browser-shared",
         )
 
         with patch(
@@ -107,9 +115,7 @@ class TestSharedBrowserCleanupOnDelete:
             await sandbox_mgr.delete(sandbox, delete_source="test")
 
         # Verify sandbox was actually soft-deleted (query DB directly)
-        result = await db_session.execute(
-            select(SandboxModel).where(SandboxModel.id == sandbox.id)
-        )
+        result = await db_session.execute(select(SandboxModel).where(SandboxModel.id == sandbox.id))
         s = result.scalars().first()
         assert s is not None
         assert s.deleted_at is not None

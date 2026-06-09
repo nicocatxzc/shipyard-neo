@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -35,17 +35,24 @@ class _SpyAdapter(BaseAdapter):
     def __init__(self, *, return_result=None, raise_on=None):
         self.exec_calls: list[dict] = []
         self._return_result = return_result or ExecutionResult(
-            success=True, output="ok", error="", exit_code=0,
+            success=True,
+            output="ok",
+            error="",
+            exit_code=0,
         )
         self._raise_on = raise_on or {}
 
     async def exec_browser(self, cmd, sandbox_id=None, cargo_id=None, timeout=30):
-        self.exec_calls.append({"cmd": cmd, "sandbox_id": sandbox_id, "cargo_id": cargo_id, "timeout": timeout})
+        self.exec_calls.append(
+            {"cmd": cmd, "sandbox_id": sandbox_id, "cargo_id": cargo_id, "timeout": timeout}
+        )
         if "exec_browser" in self._raise_on:
             raise self._raise_on["exec_browser"]
         return self._return_result
 
-    async def exec_browser_batch(self, commands, sandbox_id=None, cargo_id=None, timeout=60, stop_on_error=True):
+    async def exec_browser_batch(
+        self, commands, sandbox_id=None, cargo_id=None, timeout=60, stop_on_error=True
+    ):
         self.exec_calls.append(
             {"batch": commands, "sandbox_id": sandbox_id, "cargo_id": cargo_id, "timeout": timeout}
         )
@@ -96,9 +103,13 @@ class TestSharedGullRouting:
         assert shared_gull.exec_calls[0]["sandbox_id"] == "sandbox-test"
         assert result.success is True
 
-    async def test_exec_browser_batch_skips_ensure_session(self, router, sandbox, fake_mgr, shared_gull):
+    async def test_exec_browser_batch_skips_ensure_session(
+        self, router, sandbox, fake_mgr, shared_gull
+    ):
         await router.exec_browser_batch(
-            sandbox, ["goto A", "snapshot"], timeout=30,
+            sandbox,
+            ["goto A", "snapshot"],
+            timeout=30,
         )
         assert fake_mgr.ensure_calls == 0
         assert len(shared_gull.exec_calls) == 1  # batch is one call

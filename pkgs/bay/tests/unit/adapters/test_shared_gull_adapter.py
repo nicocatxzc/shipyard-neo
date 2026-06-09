@@ -19,11 +19,13 @@ async def mock_client(monkeypatch: pytest.MonkeyPatch):
     calls: list[dict] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        calls.append({
-            "method": request.method,
-            "path": request.url.path,
-            "body": json.loads(request.content.decode()) if request.content else None,
-        })
+        calls.append(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "body": json.loads(request.content.decode()) if request.content else None,
+            }
+        )
 
         if request.url.path == "/exec":
             body = json.loads(request.content.decode()) if request.content else {}
@@ -32,17 +34,25 @@ async def mock_client(monkeypatch: pytest.MonkeyPatch):
 
             # Simulate agent-browser responses
             if "bad_cmd" in cmd:
-                return httpx.Response(200, json={
-                    "stdout": "", "stderr": "command failed", "exit_code": 1,
-                })
+                return httpx.Response(
+                    200,
+                    json={
+                        "stdout": "",
+                        "stderr": "command failed",
+                        "exit_code": 1,
+                    },
+                )
             if "slow" in cmd:
                 # Simulate timeout (let httpx handle it)
                 raise httpx.TimeoutException("timed out")
-            return httpx.Response(200, json={
-                "stdout": f"OK: {cmd} in {sandbox}\n",
-                "stderr": "",
-                "exit_code": 0,
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "stdout": f"OK: {cmd} in {sandbox}\n",
+                    "stderr": "",
+                    "exit_code": 0,
+                },
+            )
 
         if request.url.path.startswith("/sessions/"):
             return httpx.Response(200, json={"destroyed": True})

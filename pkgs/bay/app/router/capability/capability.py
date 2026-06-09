@@ -271,10 +271,13 @@ class CapabilityRouter:
         if self._shared_gull is not None:
             self._log.info(
                 "capability.browser.exec_shared",
-                sandbox_id=sandbox.id, cmd=cmd[:100],
+                sandbox_id=sandbox.id,
+                cmd=cmd[:100],
             )
             return await self._shared_gull.exec_browser(
-                cmd, sandbox_id=sandbox.id, cargo_id=sandbox.cargo_id,
+                cmd,
+                sandbox_id=sandbox.id,
+                cargo_id=sandbox.cargo_id,
                 timeout=timeout,
             )
 
@@ -283,7 +286,9 @@ class CapabilityRouter:
         await self._require_capability(adapter, "browser")
         self._log.info(
             "capability.browser.exec",
-            sandbox_id=sandbox.id, session_id=session.id, cmd=cmd[:100],
+            sandbox_id=sandbox.id,
+            session_id=session.id,
+            cmd=cmd[:100],
         )
         return await adapter.exec_browser(cmd, timeout=timeout)
 
@@ -303,19 +308,26 @@ class CapabilityRouter:
         if self._shared_gull is not None:
             self._log.info(
                 "capability.browser.exec_batch_shared",
-                sandbox_id=sandbox.id, n_cmds=len(commands),
+                sandbox_id=sandbox.id,
+                n_cmds=len(commands),
             )
             results = await self._shared_gull.exec_browser_batch(
-                commands, sandbox_id=sandbox.id, cargo_id=sandbox.cargo_id,
+                commands,
+                sandbox_id=sandbox.id,
+                cargo_id=sandbox.cargo_id,
                 timeout=timeout,
                 stop_on_error=stop_on_error,
             )
             return {
                 "results": [
-                    {"cmd": c, "stdout": r.output, "stderr": r.error,
-                     "exit_code": r.exit_code, "step_index": i,
-                     "duration_ms": 0,
-                     }
+                    {
+                        "cmd": c,
+                        "stdout": r.output,
+                        "stderr": r.error,
+                        "exit_code": r.exit_code,
+                        "step_index": i,
+                        "duration_ms": 0,
+                    }
                     for i, (c, r) in enumerate(zip(commands, results))
                 ],
                 "total_steps": len(commands),

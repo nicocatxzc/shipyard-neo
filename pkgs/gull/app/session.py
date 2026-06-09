@@ -94,11 +94,13 @@ async def start_shared_chromium() -> None:
 
         logger.info(
             "[gull] Starting shared Chromium: %s --remote-debugging-port=%s",
-            CHROMIUM_BIN, CDP_PORT,
+            CHROMIUM_BIN,
+            CDP_PORT,
         )
         try:
             _chromium = await asyncio.create_subprocess_exec(
-                CHROMIUM_BIN, *CHROMIUM_ARGS,
+                CHROMIUM_BIN,
+                *CHROMIUM_ARGS,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -142,12 +144,11 @@ async def check_chromium_health() -> bool:
         return False
     try:
         reader, writer = await asyncio.wait_for(
-            asyncio.open_connection("127.0.0.1", CDP_PORT), timeout=2,
+            asyncio.open_connection("127.0.0.1", CDP_PORT),
+            timeout=2,
         )
         request = (
-            "GET /json/version HTTP/1.1\r\n"
-            "Host: localhost\r\n"
-            "Connection: close\r\n\r\n"
+            "GET /json/version HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
         )
         writer.write(request.encode())
         await writer.drain()
@@ -217,7 +218,8 @@ async def _run_parts(
             cwd=cwd,
         )
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout,
+            proc.communicate(),
+            timeout=timeout,
         )
         stdout = stdout_bytes.decode("utf-8", errors="replace")
         stderr = stderr_bytes.decode("utf-8", errors="replace")

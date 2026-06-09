@@ -9,7 +9,7 @@ These run in the Gull test suite (pkgs/gull).
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -63,11 +63,14 @@ class TestExecuteBrowser:
         from app.session import execute_browser
 
         mock_subprocess["proc"] = _SubprocessMock(
-            stdout=b"ok", stderr=b"", returncode=0,
+            stdout=b"ok",
+            stderr=b"",
+            returncode=0,
         )
 
         stdout, stderr, code = await execute_browser(
-            "sandbox-abc", "goto https://example.com",
+            "sandbox-abc",
+            "goto https://example.com",
         )
 
         args = mock_subprocess["last_args"]
@@ -85,7 +88,8 @@ class TestExecuteBrowser:
         from app.session import execute_browser
 
         mock_subprocess["proc"] = _SubprocessMock(
-            stdout=b"done", returncode=0,
+            stdout=b"done",
+            returncode=0,
         )
         _, _, code = await execute_browser("s", "snapshot")
         assert code == 0
@@ -94,7 +98,9 @@ class TestExecuteBrowser:
         from app.session import execute_browser
 
         mock_subprocess["proc"] = _SubprocessMock(
-            stdout=b"", stderr=b"error", returncode=1,
+            stdout=b"",
+            stderr=b"error",
+            returncode=1,
         )
         _, stderr, code = await execute_browser("s", "bad_cmd")
         assert code == 1
@@ -110,7 +116,9 @@ class TestExecuteBrowserTimeout:
         mock_subprocess["proc"] = _SubprocessMock(delay=5)
 
         stdout, stderr, code = await execute_browser(
-            "s", "slow_cmd", timeout=0.1,
+            "s",
+            "slow_cmd",
+            timeout=0.1,
         )
 
         assert code == 124

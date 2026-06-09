@@ -19,7 +19,13 @@ import uuid
 
 import httpx
 
-from ..conftest import AUTH_HEADERS, BAY_BASE_URL, DEFAULT_PROFILE, DEFAULT_TIMEOUT, e2e_skipif_marks
+from ..conftest import (
+    AUTH_HEADERS,
+    BAY_BASE_URL,
+    DEFAULT_PROFILE,
+    DEFAULT_TIMEOUT,
+    e2e_skipif_marks,
+)
 
 pytestmark = e2e_skipif_marks
 

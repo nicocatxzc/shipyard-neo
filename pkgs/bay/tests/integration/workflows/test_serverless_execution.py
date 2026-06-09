@@ -46,7 +46,9 @@ class TestServerlessExecutionWorkflow:
             sandbox_id = sandbox["id"]
 
             # Verify initial state
-            assert sandbox["status"] in ("idle", "ready"), f"Expected idle status, got: {sandbox['status']}"
+            assert sandbox["status"] in ("idle", "ready"), (
+                f"Expected idle status, got: {sandbox['status']}"
+            )
 
             # Step 2: Execute code (triggers cold start)
             exec_response = await client.post(

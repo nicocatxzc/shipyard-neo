@@ -71,9 +71,10 @@ def _translate_and_split(cmd: str, cargo_id: str) -> tuple[list[str], str, str]:
         if arg == "/workspace":
             argv[i] = cargo_path
         elif arg.startswith("/workspace/"):
-            argv[i] = cargo_path + arg[len("/workspace"):]
+            argv[i] = cargo_path + arg[len("/workspace") :]
 
     return argv, cargo_path, f"{cargo_path}/.browser/profile"
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -401,7 +402,9 @@ async def lifespan(app: FastAPI):
         # ── Shared mode ──────────────────────────────────────────────
         from app.session import start_shared_chromium, stop_shared_chromium
 
-        logger.info("[gull] Starting in shared mode (CDP port=9222), version=%s", GULL_VERSION)
+        logger.info(
+            "[gull] Starting in shared mode (CDP port=9222), version=%s", GULL_VERSION
+        )
         try:
             await start_shared_chromium()
             _browser_ready = True
@@ -477,7 +480,9 @@ async def exec_command(request: ExecRequest) -> ExecResponse:
     if GULL_MODE == "shared" and sandbox_id:
         # ── Shared mode ────────────────────────────────────────
         if request.cargo_id:
-            argv, cwd, profile_path = _translate_and_split(request.cmd, request.cargo_id)
+            argv, cwd, profile_path = _translate_and_split(
+                request.cmd, request.cargo_id
+            )
             from app.session import execute_browser_raw
 
             stdout, stderr, exit_code = await execute_browser_raw(
@@ -535,14 +540,19 @@ async def exec_batch(request: BatchExecRequest) -> BatchExecResponse:
                 from app.session import execute_browser_raw
 
                 stdout, stderr, exit_code = await execute_browser_raw(
-                    sandbox_id, argv, cwd=cwd, profile=profile_path,
+                    sandbox_id,
+                    argv,
+                    cwd=cwd,
+                    profile=profile_path,
                     timeout=remaining_timeout,
                 )
             else:
                 from app.session import execute_browser
 
                 stdout, stderr, exit_code = await execute_browser(
-                    sandbox_id, cmd, timeout=remaining_timeout,
+                    sandbox_id,
+                    cmd,
+                    timeout=remaining_timeout,
                 )
         else:
             profile = None if _browser_ready else BROWSER_PROFILE_DIR
@@ -556,8 +566,12 @@ async def exec_batch(request: BatchExecRequest) -> BatchExecResponse:
         step_duration_ms = int((time.perf_counter() - step_start) * 1000)
         results.append(
             BatchStepResult(
-                cmd=cmd, stdout=stdout, stderr=stderr,
-                exit_code=exit_code, step_index=i, duration_ms=step_duration_ms,
+                cmd=cmd,
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                step_index=i,
+                duration_ms=step_duration_ms,
             )
         )
         if request.stop_on_error and exit_code != 0:
@@ -639,6 +653,7 @@ async def delete_session(sandbox_id: str) -> dict:
     """
     if GULL_MODE == "shared":
         from app.session import destroy_session
+
         await destroy_session(sandbox_id)
     return {"sandbox_id": sandbox_id, "destroyed": True}
 
