@@ -44,6 +44,9 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
+# Sentinel for uninitialised cached value (None means "resolved to no host root").
+_UNSET = object()
+
 # Cargo mount path inside container (fixed)
 WORKSPACE_MOUNT_PATH = "/workspace"
 
@@ -85,6 +88,55 @@ class DockerDriver(Driver):
 
         self._log = logger.bind(driver="docker")
         self._client: aiodocker.Docker | None = None
+        # Cached host-side cargo root path, resolved once on first use.
+        self._resolved_host_root: str | None | _UNSET = _UNSET
+
+    async def _resolve_host_root(self) -> str | None:
+        """Resolve the host-side path for the cargo root mount point.
+
+        Priority:
+        1. Explicit ``cargo.host_root_path`` in config.
+        2. Auto-detection: parse ``/proc/self/mountinfo`` to find the
+           host-side source of the cargo root bind mount.  This works
+           regardless of cgroup version or container runtime.
+
+        Result is cached after first resolution — the host path doesn't
+        change during Bay's lifetime.
+
+        Returns None when no bind-mount-capable host path can be determined
+        (named volumes will be used instead).
+        """
+        if self._resolved_host_root is not _UNSET:
+            return self._resolved_host_root  # type: ignore[return-value]
+
+        settings = get_settings()
+
+        # 1. Explicit config always wins.
+        if settings.cargo.host_root_path:
+            self._resolved_host_root = settings.cargo.host_root_path
+            return self._resolved_host_root
+
+        # 2. Auto-detect via /proc/self/mountinfo.
+        root_path = settings.cargo.root_path.rstrip("/")
+        try:
+            with open("/proc/self/mountinfo") as f:
+                for line in f:
+                    # Format: id parent major:minor root mount_point opts - type dev opts
+                    parts = line.split()
+                    if len(parts) >= 5 and parts[4].rstrip("/") == root_path:
+                        host_source = parts[3]  # "root" field = host-side path
+                        self._log.info(
+                            "docker.host_root.resolved",
+                            mount_dest=root_path,
+                            mount_source=host_source,
+                        )
+                        self._resolved_host_root = host_source
+                        return host_source
+        except Exception:
+            self._log.debug("docker.host_root.mountinfo_failed")
+
+        self._resolved_host_root = None
+        return None
 
     async def _get_client(self) -> aiodocker.Docker:
         """Get or create the aiodocker client."""
@@ -463,22 +515,20 @@ class DockerDriver(Driver):
     async def create_volume(self, name: str, labels: dict[str, str] | None = None) -> str:
         """Create a cargo volume.
 
-        When ``cargo.host_root_path`` is configured: creates a plain
-        directory at that path (bind mount) and returns the host path.
-        Used for shared browser deployments where Gull needs access to
-        per-sandbox cargo directories.
+        When a host-side path can be resolved (explicit config or auto-detection
+        via self-inspection): creates a plain directory at that path (bind mount)
+        and returns the host path.  Used for shared browser deployments where
+        Gull needs access to per-sandbox cargo directories.
 
-        When ``host_root_path`` is NOT configured: creates a Docker named
-        volume.  The name is used directly in Binds and Docker resolves
-        it from the daemon's volume store — the right default when Bay
-        runs inside a container with no host filesystem knowledge.
+        Otherwise creates a Docker named volume.  The name is used directly in
+        Binds and Docker resolves it from the daemon's volume store — the right
+        default when Bay runs inside a container with no host filesystem knowledge.
         """
-        settings = get_settings()
+        host_root = await self._resolve_host_root()
 
-        if settings.cargo.host_root_path:
+        if host_root:
             # Bind-mount mode: directory on the Docker host
-            host_root = Path(settings.cargo.host_root_path)
-            cargo_path = host_root / name
+            cargo_path = Path(host_root) / name
             cargo_path.mkdir(parents=True, exist_ok=True)
             self._log.info("docker.create_volume.bind", name=name, path=str(cargo_path))
             return str(cargo_path)
@@ -491,9 +541,9 @@ class DockerDriver(Driver):
 
     async def delete_volume(self, name: str) -> None:
         """Delete a cargo volume (directory or named volume)."""
-        settings = get_settings()
+        host_root = await self._resolve_host_root()
 
-        if settings.cargo.host_root_path:
+        if host_root:
             # Bind-mount mode: name is already a host path, delete directory
             cargo_path = Path(name)
             if cargo_path.exists():
@@ -511,9 +561,9 @@ class DockerDriver(Driver):
 
     async def volume_exists(self, name: str) -> bool:
         """Check if cargo volume exists."""
-        settings = get_settings()
+        host_root = await self._resolve_host_root()
 
-        if settings.cargo.host_root_path:
+        if host_root:
             # Bind-mount mode: name is already the host path
             return Path(name).is_dir()
 
